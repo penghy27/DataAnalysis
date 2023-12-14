@@ -1,6 +1,6 @@
 # Data Analysis
 
-The repository contains assignments and practicums for the 'Collect, Store, Retrieve, Analyze Data' course in Data Analysis.
+The repo contains assignments and practicums for the 'Collect, Store, Retrieve, Analyze Data' course in Data Analysis.
 
 ### Module
 
