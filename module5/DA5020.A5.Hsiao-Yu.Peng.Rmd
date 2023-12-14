@@ -1,0 +1,206 @@
+---
+title: "DA5020.A5.Hsiao-Yu.Peng"
+author: "Hsiao-Yu Peng"
+date: "2023-10-10"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(RCurl)
+library(XML)
+library(stringr)
+library(tidyverse)
+
+```
+
+
+# Q1
+```{r}
+url <- "https://www.senate.gov/general/contact_information/senators_cfm.xml"
+
+# Use RCurl to fetch the data from the URL
+xml_data <- getURL(url)
+
+# Parse the XML data
+parsed_data <- xmlParse(xml_data)
+
+# Convert the XML data into a data fram
+senator_df <- xmlToDataFrame(parsed_data)
+
+# Check the data frame information
+dim(senator_df)
+glimpse(senator_df)
+summary(senator_df)
+sum(is.na(senator_df))
+# head(senator_df)
+
+```
+The dataset has dimension 101x13, all variables are character type. The are some missing values in the dataset. 
+
+
+# Q2
+```{r}
+# Extract only the first names
+pattern <- "\\s|,"
+senator_df$first_name <- sapply(str_split(senator_df$first_name, pattern), function(x) x[1])
+
+# Select first name, last name and the party
+df <- senator_df %>% 
+  select(first_name, last_name, party)
+
+head(df)
+```
+
+The data frame's variable "first_name" has been removed the middle initial or prefix. It extracts only first, last names and party.
+
+
+# Q3
+```{r}
+senatorsByState <- function(state_abbreviation) {
+  selected_senators <- senator_df %>%
+    filter(state == state_abbreviation) %>%
+    select(first_name, last_name, party) %>%
+    mutate(party = str_replace_all(party, c("D" = "Democratic Party", "R" = "Republican Party", "I" = "Independent")))
+    
+  # Check if there are senators from the selected state
+  if (nrow(selected_senators) > 0) {
+    # Initialize senator_info as NULL
+    senator_info <- NULL
+    
+    # Iterate through selected senators
+    for (i in 1:nrow(selected_senators)) {
+      senator_name <- paste(selected_senators[i, "first_name"], selected_senators[i, "last_name"])
+      senator_party <- selected_senators[i, "party"]
+      # Concatenate each row to senator_info
+      senator_info <- c(senator_info, paste(senator_name, senator_party, sep = ", "))
+    }
+    
+    # Create a message with senator information by joining senator_info with ", "
+    message <- paste("The senators for", state_abbreviation, "are:", toString(senator_info))
+    
+    # Display the message
+    cat(message, "\n")
+  } else {
+    cat("No senators found for the specified state (", state_abbreviation, ")\n")
+  }
+}
+
+# Example:
+senatorsByState("MA")
+```
+
+
+
+# Q4
+```{r}
+# load data set
+df <- read_csv("~/Desktop/2023Fall_Syllabus/DA5020/week5/Ratio Of Female To Male Youth Unemployment Rate.csv", skip = 4) # skip the first 4 rows
+
+dimension(df)
+```
+
+
+```{r}
+# Create country_name tibble
+country_name <- df %>% 
+  select(`Country Name`, `Country Code`) %>% 
+  distinct() # remove duplicate rwows
+
+print(country_name)
+```
+The tibble named "country_name" has 263 rows and 2 columns.
+
+
+```{r}
+# tidy the data frame by pivot_longer()
+tidy_data <- df %>%
+  pivot_longer(cols = -c("Country Name", "Country Code", "Indicator Name", "Indicator Code"), names_to = "year", values_to = "value") %>% 
+  rename(country_code = `Country Code`)
+
+
+# Create indicator_data tibble
+indicator_data <- tidy_data %>%
+  select(country_code, year, value)
+
+print(indicator_data)
+
+```
+
+The tibble named "indicator_data" has 16,306 rows and 3 columns.
+
+
+# Q5
+```{r}
+country_data <- read_csv("~/Desktop/2023Fall_Syllabus/DA5020/week5/Country Meta-Data.csv")
+
+country_data <- country_data %>% 
+  rename(country_code = `Country Code`)
+
+indicator_data_20 <- indicator_data %>% 
+  filter(year >= 2000 & !is.na(value)) %>% 
+  inner_join(country_data, by = "country_code")
+
+```
+
+We filter the last 20 year information and remove missing value in the "value" column. 
+
+
+
+```{r}
+# Write a function to get unique 5 countries
+get_unique_country_codes <- function(region) {
+  indicator_data_20 %>%
+    filter(Region == region) %>%
+    select(country_code) %>%
+    unique() 
+    # slice(1:5)
+}
+
+# Get unique country code from the continents
+unique_asia <- get_unique_country_codes("South Asia")
+unique_america <- get_unique_country_codes("North America")
+unique_mdEast <- get_unique_country_codes("Middle East & North Africa")
+
+
+print(unique_asia)
+unique_asia <- c("AGF", "BGD", "BTN", "IND", "LKA")
+print(unique_america)
+unique_america <- c("CAN", "USA")
+print(unique_mdEast)
+unique_mdEast <- c("ARE", "BHR", "QAT", "KWT", "ISR")
+
+```
+
+
+
+```{r}
+# Select countries
+selected_countries <- indicator_data_20 %>%
+  filter(country_code %in% c(unique_asia, unique_america, unique_mdEast)) 
+
+
+```
+
+
+```{r}
+# Create the line plots
+ggplot(selected_countries, aes(x = year, y= value, group = country_code, color = country_code)) + 
+  geom_line() +
+  facet_wrap(~Region, ncol=1, scales="free_y") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+We compared the ratio of female to male youth unemployment rates in North America, South Asia, and the Middle East over the last 20 years. We found that the lowest ratio is in North America, ranging from 70 to 90. The second lowest ratio is in South Asia, which ranges from 90 to 210. The highest ratio is in the Middle East, ranging from 250 to 500, with QATAR (QAT) reaching even higher levels (2500) in 2011.
+
+North America comprises three countries in the dataset: the USA, Canada (CAN), and Bermuda (BMU). However, Bermuda (BMU) lacks unemployment information, so we only display data for the USA and Canada in the line plots.
+
+The Middle East exhibits a relatively high ratio of female to male youth unemployment rates, possibly influenced by cultural factors. In some Middle Eastern countries, women may face restrictions on working outside the home, which could explain the higher ratio compared to the other three regions.
+
+We also conducted a survey of income group information within the dataset. North America falls into the high-income group category, whereas South Asia is categorized as a low-income group. High-income groups tend to have relatively lower ratios of female to male youth unemployment rates, which may indicate that higher income levels encourage women to participate in the workforce.

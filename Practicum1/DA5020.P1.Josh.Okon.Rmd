@@ -1,0 +1,317 @@
+---
+title: "DA5020.P1.Josh.Okon"
+author: "Hsiao-Yu Peng, Chandani Shrestha, and Josh Okon"
+date: "2023-10-05"
+output: pdf_document
+---
+
+# Part 1: Answer the following questions.
+
+**1. Create a dataframe with 4 variables. The 4 variables should be doctor_type, doctor_lastname, location, AVG_Rating. The variable doctor_type should contain 4 inputs (PCP, Psychiatrist, Surgeon, Anesthesia). The variable doctor_lastname should contain 4 inputs (Smith, Dame, Jones, Zayas). The variable location should contain 4 inputs (MA, ME, NH, VT). The variable AVG_Rating should contain 4 inputs (7,9,8,9). Print the dataframe and include a screenshot.**
+
+```{r echo = FALSE}
+# Load all libraries
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+```
+
+
+```{r echo = FALSE}
+# Variables for data frame
+doctor_type <- c("PCP", "Psychiatrist", "Surgeon", "Anesthesia")
+doctor_lastname <- c ("Smith", "Dame", "Jones", "Zayas")
+location <- c ("MA", "ME", "NH","VT")
+AVG_Rating <- c(7,9,8,9)
+
+# Create dataframe
+doctor_df <- data.frame(doctor_type, doctor_lastname, location, AVG_Rating)
+print(doctor_df)
+```
+
+**2. Using the dataframe above… Select row 1 in column 2, what was selected? Select rows 2 through 4, what was selected? Select the last column, what was selected?**
+
+Selecting row 1 in column 2 is the doctor last name of "Smith." Selecting rows 2 through 4 provides all the information for the doctors with the last names of "Dame," "Jones," and "Zayas." Selecting the last column provides the average rating for each doctor.
+
+```{r echo = FALSE}
+# select row 1 in column 2
+doctor_df[1,2]
+
+# select rows 2 through 4
+doctor_df[2:4,]
+
+# select last column
+last_col <- ncol(doctor_df)
+doctor_df[,last_col]
+```
+
+**3. Using the dataset Mtcars create a scatterplot showing the relations between any two variables of your choosing. Explain why you picked those variables. Each point should also be based on a color scheme of your choosing.**
+
+We chose hp and mpg and colored our scatter plot based on the number of cylinders. We chose colors of our own for the number of cylinders, blue for 4, green for 6, and red for 8. Whenever we think of buying cars, we mainly consider two things - how powerful the car is and what's its mileage. So, we chose these variables to understand how an increase or decrease in horsepower relates to mileage and the number of cylinders.
+
+As per the scatter plot, we can see that there is a negative relationship between horsepower and miles per gallon i.e as the horse power increases, there is a decrease in fuel efficiency (mpg). Likewise, as the number of cylinders increases, there is a decrease in mileage as well.
+
+```{r echo = FALSE}
+# load data first
+data(mtcars)
+my_colors <- c("4" = "blue", "6" = "green", "8" = "red")
+ggplot(mtcars, aes(x=hp, y = mpg, color = as.factor(cyl))) + geom_point() + 
+  labs(title = "Scatterplot of Horsepower vs. Miles per Gallon in mtcars",
+	   caption = "Analysis of the relationship between horsepower and fuel efficiency",
+               x = "Gross horsepower",
+               y = "Miles per gallon") + scale_color_manual(values = my_colors)
+```
+
+**4. Using the dataset MTcars perform a summary statistic on the dataset and calculate the pearson coefficient of the correlation R picking two variables of choice. Explain why you picked those variables and explain the purpose of a pearson coefficient.**
+
+We chose mpg and hp because these are important factors in evaluating a car's performance and efficiency. The mpg represents fuel efficiency and hp represents engine power. The pearson coefficient between mpg and hp is "-0.7761684" which indicates a strong negative correlation. The pearson correlation coefficient is a valuable parameter to understand/measure linear relationships between variables. This coefficient measures strength and direction of the relationship between two continuous variables. The value lies between -1 and 1. -1 means strong negative relation, 1 indicates strong positive relation and 0 represents no relation at all.
+
+```{r echo = FALSE}
+# summary statistics
+summary(mtcars)
+
+# pearson correlation between mpg and hp
+cor(mtcars$mpg, mtcars$hp, method="pearson")
+```
+
+
+# Part 2: Practicum Tasks
+
+**The Office of Addiction Services and Support publishes a dataset on reported admissions of people in certified chemical dependence treatment programs throughout New York State (NYS). This dataset includes the number of admissions to certified treatment programs aggregated by the program category, county of the program location, age group of client at admission, and the primary substance of abuse group. For more information on the dataset, visit the following website.**
+
+**You are given the task of performing a comprehensive analysis of the admission statistics from 2007 to 2019 and summarize your findings with an accompanying narrative that explains your process-flow.**
+
+**1. Load the data, directly from the URL, into your R environment.**
+
+```{r echo = FALSE}
+# load the data from the URL
+ny.cd_df <- read.csv("https://data.ny.gov/api/views/ngbt-9rwf/rows.csv")
+head(ny.cd_df)
+```
+
+**2. Evaluate the dataset to determine what data preparation steps are needed and perform them. At a minimum, ensure that you discuss the distribution of the data, outliers and prepare any helpful summary statistics to support your analysis.**
+
+We used dim(), glimpse(), head(), str(), and summary() to inspect the data. There are 99367 rows and 7 columns. We looked for NA values as well and there were none. While doing summary, we could see some extreme values in the Admissions column, minimum being 1 and maximum being 2861.
+
+```{r echo = FALSE}
+# Data Exploration
+dim(ny.cd_df)
+glimpse(ny.cd_df)
+str(ny.cd_df)
+head(ny.cd_df)
+summary(ny.cd_df)
+sum(is.na(ny.cd_df))
+```
+
+We did some data preparation by renaming the column names to a more standard name format. We looked for outliers by using boxplot and we could see many points outside the whiskers of the boxplot. Hence, we use z-score to find and remove those. We considered a z-score > 3 as an outlier and removed the data points. We first created a function called z_score to do all the calculations and used that in the mutate function. After removing outliers, the 99367 observations decreased to 97450 observations i.e 1917 observations were outliers.
+
+The type of the "Year" and "Admissions" were correctly specified as "int" and the rest were of type "char". So, we looked for the variables of type "char" if there were any which can be considered factors. We used the unique() function to get unique observations of each variable. Based on that, we considered County_of_Program_Location, Age_Group, Program_Category and Primary_Substance_Group variables to be converted to factors.
+
+```{r echo = FALSE}
+# Data Preparation
+# Rename variable names for ease of work
+ny.cd_df <- ny.cd_df %>%
+  rename("County_of_Program_Location" = "County.of.Program.Location",
+         "Service_Type" = "Service.Type",
+         "Program_Category" = "Program.Category",
+         "Age_Group" = "Age.Group",
+         "Primary_Substance_Group" = "Primary.Substance.Group")
+
+
+# look for outliers
+ggplot(ny.cd_df, aes(x =1, y=Admissions)) + geom_boxplot(width=0.5, size=0.2) + theme_minimal() +
+  coord_flip() +
+  labs(title = "Box Plot of Admissions in New York Counties",
+	  caption = "Visualizing Addiction Services Admissions Distribution to look for outliers")
+
+# Remove outliers
+z_score <- function(x) {
+  x_mean <- mean(x)
+  x_std <- sd(x)
+  z <- abs(x_mean-x)/x_std
+  return(z)
+}
+
+# z-score > 3 are considered outliers
+filtered_nycdf <- ny.cd_df %>%
+  mutate(z_score_Ad = z_score(Admissions)) %>%
+  # filter outliers
+  filter(z_score_Ad <= 3)
+
+# find the number of outliers
+wo_outliers <- nrow(filtered_nycdf)
+outliers <- nrow(ny.cd_df) - wo_outliers
+outliers
+
+# converting columns to factors
+# first see unique observations of each column
+lapply(ny.cd_df, unique)
+# convert to factors
+ny.cd_df %>% mutate(across(c(County_of_Program_Location, Age_Group, Program_Category, Primary_Substance_Group), as.factor)) %>% 
+head()
+```
+
+
+**3. Structure the data relationally, at a minimum, you should have four tibbles or data frames as follows: county which contains the name of all counties and their respective county code (which is the primary key). Note: ensure that your data frame does not contain duplicate counties and ensure that your dataframe contains all counties in the data. program_category: which contains a unique identifier and the name of the program category. Note: ensure that your data frame does not contain duplicates. The codes can be numeric (e.g. auto incremented). primary_substance_group: which contains a unique identifier and the name of the substance. Note: ensure that your data frame does not contain duplicates. The codes can be numeric (e.g. auto incremented). admissions_data which contain the details on the reported number of admissions — excluding the data that resides in the county, program_category and primary_substance_group tibbles/data frames; you should instead include a column with their respective foreign keys. The names should be substituted with their respective foreign keys.**
+
+```{r echo = FALSE}
+# creating tibble for county codes and county names
+county <- tibble(county_code = c("AL","CA","CN","DE","FR","LE","MG","ON","OL","NY","SL","SY","SV","WR","AG","CY","CL","DU","FU","HE","LI","NA","OD","OS","RE","SA","SE","TI","WS","NY","CH","CO","ER","GE","JE","MA","NY","OT","OG","NY","SC","ST","TO","WA","BM","CM","CR","ES","GR","NY","MO","NI","OR","PU","RO","SH","SU","UL","WE","WY","YA"),
+                 county_name = c("Albany","Cattaraugus","Chenango","Delaware","Franklin","Lewis","Montgomery","Oneida","Orleans","Queens","Saint Lawrence","Schuyler","Sullivan","Warren","Allegany","Cayuga","Clinton","Dutchess","Fulton","Herkimer","Livingston","Nassau","Onondaga","Oswego","Rensselaer","Saratoga","Seneca","Tioga","Washington","Bronx","Chautauqua","Columbia","Erie","Genesee","Jefferson","Madison","New York","Ontario","Otsego","Richmond","Schenectady","Steuben","Tompkins","Wayne","Broome","Chemung","Cortland","Essex","Greene","Kings","Monroe","Niagara","Orange","Putnam","Rockland","Schoharie","Suffolk","Ulster","Westchester","Wyoming","Yates"))
+
+# finding duplicate values in the county codes
+duplicates <- county %>%
+	group_by(county_code) %>%
+	filter(n() > 1) %>%
+	ungroup(county_code)
+
+duplicates
+
+# manually changing the the county codes for duplicates
+county <- tibble(county_code = c("AL","CA","CN","DE","FR","HA","LE","MG","ON","OL","QU","SL","SY","SV","WR","AG","CY","CL","DU","FU","HE","LI","NA","OD","OS","RE","SA","SE","TI","WS","BR","CH","CO","ER","GE","JE","MA","NY","OT","OG","RM","SC","ST","TO","WA","BM","CM","CR","ES","GR","KI","MO","NI","OR","PU","RO","SH","SU","UL","WE","WY","YA"),
+                 county_name = c("Albany","Cattaraugus","Chenango","Delaware","Franklin","Hamilton","Lewis","Montgomery","Oneida","Orleans","Queens","Saint Lawrence","Schuyler","Sullivan","Warren","Allegany","Cayuga","Clinton","Dutchess","Fulton","Herkimer","Livingston","Nassau","Onondaga","Oswego","Rensselaer","Saratoga","Seneca","Tioga","Washington","Bronx","Chautauqua","Columbia","Erie","Genesee","Jefferson","Madison","New York","Ontario","Otsego","Richmond","Schenectady","Steuben","Tompkins","Wayne","Broome","Chemung","Cortland","Essex","Greene","Kings","Monroe","Niagara","Orange","Putnam","Rockland","Schoharie","Suffolk","Ulster","Westchester","Wyoming","Yates"))
+
+# confirming no more duplicated county codes and keeping only distict county codes
+sum(duplicated(county$county_code))
+county %>% distinct(county_code,.keep_all = TRUE)
+
+
+# creating tibble for program category codes and program category names
+program_category <- tibble(program_code =
+c("CR","IN","OTP","RES","OUT","SP"),
+						  program_category_name = 
+c("Crisis","Inpatient","Opiod Treatment Program","Residential","Outpatient","Specialized"))
+
+program_category
+
+
+# identifyinyg all possible primary substance group names
+unique(ny.cd_df$Primary_Substance_Group)
+
+# creating tibble for primary substance group codes and primary substance group names
+primary_substance_group <- tibble(substance_code =
+c("H","AO","OO","A","C","M","N"),
+								 primary_substance_group_name =
+c("Heroin","All Others","Other Opioids","Alcohol","Cocaine","Marijuana","None"))
+
+primary_substance_group
+
+
+# substituting in foreign keys through joining data
+admissions_data <- ny.cd_df %>%
+	left_join(county, by = join_by("County_of_Program_Location" == "county_name")) %>%
+	left_join(program_category, by = join_by("Program_Category" == "program_category_name")) %>%
+	left_join(primary_substance_group, by = join_by("Primary_Substance_Group" == "primary_substance_group_name")) %>%
+	# removing original primary key columns
+	select(-County_of_Program_Location,-Program_Category,-Primary_Substance_Group) %>%
+	# renaming substituted foreign key columns as columns names from orginal data frame
+	rename("County_of_Program_Location" = "county_code",
+		  "Program_Category" = "program_code",
+		  "Primary_Substance_Group" = "substance_code")
+
+# rearranging order of columns
+admissions_data <- admissions_data[,c("Year","County_of_Program_Location","Program_Category","Service_Type","Age_Group","Primary_Substance_Group","Admissions")]
+	
+head(admissions_data)
+```
+
+**4. Create a function called annualAdmissions() that derives the total number of reported admissions that transpired each year, for the entire state of NY and displays the results using a line chart. Annotate the chart to show the year with the highest number of admissions. Note: the year should be on the x-axis and the number of admissions on the y-axis. Explain the chart.**
+
+We created a function called annualAdmissions() to return a plot of total admissions per year. First, we grouped our dataframe by 'Year' and calculated total number of admissions using the summary() function which we put inside 'total_admissions'. We only kept unique rows by using the distinct() function. We selected only 'Year' and 'total_admissions' and arranged 'total_admissions' in descending order. We put this into a new data frame called NY_admissions and then we extracted the first 'Year' to use it for annotation in the line plot.
+
+We put year in x-asis and number of admissions on y-axis. We use geom_vline() to place the reference line for the year with the highest number of admissions. We used annotate() to include both text and an arrow to show our year with the maximum admissions on the line plot.
+
+```{r echo = FALSE}
+annualAdmissions <- function(data) {
+  # Calculate the total admissions per year
+    NY_admissions <- data %>%
+	count(Year, wt = Admissions)
+    max_year <- NY_admissions %>% 
+  filter(n == max(n)) %>%
+  pull(Year) # Extract the year with maximum total admissions
+  
+  
+  # Create line plot with annotation
+  plot_nyc <- ggplot(NY_admissions, aes(x=Year, y= n)) + 
+  geom_line(color="blue") + 
+  scale_x_continuous(breaks=NY_admissions$Year) + 
+  geom_vline(xintercept = max_year, color = "red", linetype = 3) +
+  labs(title = "Line plot for total number of admissions per year in New York State",
+	   caption = "Visualizing Trends in New York State Addiction Services Admissions",
+       x = "Years from 2007 to 2021",
+       y = "Total Admissions each Year")
+  plot_nyc <- plot_nyc + annotate(
+  "text", 
+  x = max_year+ 3, y = mean(NY_admissions$n),
+  label = "highest admissions year", 
+  vjust = 1, size = 3, color = "dark green"
+  ) +
+  annotate(
+    "curve",
+    x = max_year + 3, y = mean(NY_admissions$n),
+    xend = max_year, yend = mean(NY_admissions$n),
+    arrow = arrow(length = unit(0.2, "cm"), type = "closed"),
+    color = "grey40"
+  )
+
+  return(plot_nyc)
+}
+
+# Call the function with ny.cd_df
+annualAdmissions(ny.cd_df)
+```
+
+**5. Analyze the percentage of admissions for each county and visualize the results for the top 5 counties using a bar chart. Explain the results. Note: ensure that you join any related dataframes/ tibbles.**
+
+New York County has the highest admission percentage. According to the admission percentages, from high to low, the next four counties are Kings, Queens, Suffolk, and the Bronx.
+
+```{r echo = FALSE}
+# Calculate admission percentage for each county
+county_ad_percentage <- ny.cd_df %>% 
+  group_by(County_of_Program_Location) %>% 
+  summarize(Percentage = sum(Admissions)/ sum(ny.cd_df$Admissions) * 100) %>% 
+  arrange(desc(Percentage)) %>%  
+  head(5)
+
+county_ad_percentage
+
+# Create bar chart
+ggplot(county_ad_percentage, aes(x = County_of_Program_Location, y = Percentage)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "Percentage of Admissions by County (Top5)",
+       x = "County",
+       y = "Percentage of Admissions", 
+	   caption = "The Top 5 Counties in New York State with the Highest Addiction Services Admission Rates")
+```
+
+**6. Filter the data, using a regular expression, and extract all admissions to the various “Rehab” facilities; i.e. your regex should match all facilities that include the word rehab, rehabilitation, etc. Using the filtered data, identify which substance is the most prominent among each age group. Visualize and explain the results.**
+
+Marijuana is the most prominent substance in the "18 through 24" and "Under 18" age groups. In the other four groups, "25 through 34," "35 through 44," "45 through 54," and "55 and Older," alcohol is the most prominent substance in these groups.
+
+```{r echo = FALSE}
+# Filter data using a regular expression to extract admissions to rehab-related facilities
+rehab_data <- ny.cd_df %>%
+  filter(grepl("[Rr]ehab|[Rr]ehabilitation", Service_Type))
+
+## rehab_data
+
+most_prominent_substance <- rehab_data %>% 
+  group_by(Age_Group, Primary_Substance_Group) %>% 
+  count() %>% 
+  arrange(Age_Group, desc(n)) %>% 
+  group_by(Age_Group) %>% 
+  slice(1) %>% 
+  ungroup()
+
+# most_prominent_substance
+
+# Create a bar chart
+ggplot(data = most_prominent_substance, aes(x = Age_Group, y = n, fill = Primary_Substance_Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "The Most Prominent Substance by Age Group",
+       x = "Age Group",
+       y = "Count",
+       fill = "Primary Substance Group",
+	   caption = "The most prominent substance among each age group requiring addiction services") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```

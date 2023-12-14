@@ -1,0 +1,600 @@
+---
+title: "DA5020.Practicum3.Hsiao-Yu.Peng"
+author: "Hsiao-Yu Peng"
+date: "2023-12-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(caret)
+library(psych)
+library(ggcorrplot)
+library(skimr)
+library(lubridate)
+library(corrplot)
+library(mltools)
+library(data.table)
+library(FNN)
+```
+
+
+# Question 1 
+**CRISP-DM: Data Understanding**
+
+• **Load** the NYC Green Taxi Trip Records data into a data frame or tibble.
+• **Data exploration:** explore the data to identify any patterns and analyze the relationships between the features and the target variable i.e. tip amount. At a minimum, you should analyze: 1) the distribution, 2) the correlations 3) missing values and 4) outliers — provide supporting visualizations and explain all your steps.
+
+```{r}
+# load NYC Green Taxi Trip Record
+# tripdata_df <- read_csv("~/Desktop/2023Fall_Syllabus/DA5020/week3/2018_Green_Taxi_Trip_Data.csv")
+tripdata_df<-read.delim2("~/Desktop/2023Fall_Syllabus/DA5020/module3/2018_Green_Taxi_Trip_Data.csv", header= TRUE,sep=",",na.strings=c(""))
+
+# dataset overview
+# glimpse(tripdata_df)
+dim(tripdata_df)
+summary(tripdata_df)
+
+```
+
+This dataset has dimension 1,048,575 x 19. Most variables do not have their corresponding data type, we will convert them as follows:
+
+(a) Tips, amount, distance-related variables should be numerical, such as tip_amount, total_amount..., but they are character type. We'll convert them into numerical type. 
+(b) Categorical variables in the data set are shown as numeric type, we'll convert them to factor type. 
+(c) Date-related variables including “lpep_pickup_datetime” and “lpep_dropoff_datetime" are character types. We'll convert these character data types into datetime type. 
+
+The dataset includes logical data for "ehai_fee," although "ehai_fee" has more than a 90% missing value. "total_amount" and "trip_type" have fewer missing values, and we will address these missing values later.
+
+
+###1.1 Tranform data type
+```{r}
+## Convert numeric features from character to numerical
+# Define numeric features
+numeric_var<- c("trip_distance", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", "improvement_surcharge", "total_amount")
+
+# Convert characters to numeric
+tripdata_df[numeric_var] <- lapply(tripdata_df[numeric_var], as.numeric)
+
+## Convert categorical features to factor type
+tripdata_df <- tripdata_df %>% 
+  mutate(store_and_fwd_flag = if_else(store_and_fwd_flag == "N", 0, 1))
+
+# Define categorical variables
+cat_var <- c("VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "trip_type")
+
+# Convert categorical variables to factors
+tripdata_df[cat_var] <- lapply(tripdata_df[cat_var], as.factor)
+
+
+# Convert pickup_date, dropoff_date to date.time type
+tripdata_df <- tripdata_df %>% 
+  mutate(pickup = as.Date(lpep_pickup_datetime, format = "%m/%d/%Y"))
+
+tripdata_df <- tripdata_df %>% 
+  mutate(dropoff = as.Date(lpep_dropoff_datetime, format = "%m/%d/%Y"))
+
+
+summary(tripdata_df)
+# glimpse(tripdata_df)
+```
+
+After convert some variables to their data type, we found some issues in this data set.
+
+(a) Since the dataset contains numerical variables related to taxes, tips, charges, etc., the numbers should be positive or zero. However, some variables have minimum values that are negative, which should be unreasonable. These variables include “fare_amount,” “extra,” “mta_tax,” “tip_amount,” “improve- ment_surcharge,” and “total_amount.” 
+
+(b) RateCodeID is from 1 to 6, but it has maximum value 99. We should check what numbers are unique in this variable.
+
+(c) This is 2018 dataset. But datetime variables, "lpep_pickup_datetime" and " lpep_dropoff_datetime", have information that was not in 2018, these are inconsistent data.
+
+
+## 1.1 Date-Time Variable
+
+### 1.1.1 Display date.time distribution
+```{r}
+# Display dropoff Date
+ggplot(tripdata_df, aes(x = pickup)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "white") +
+  labs(x = "Dropoff Date", y = "Frequency", title = "Distribution of Pickup Date") +
+  facet_wrap(~year(lpep_pickup_datetime), scales = "free") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Display dropoff Date
+ggplot(tripdata_df, aes(x = dropoff)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "white") +
+  labs(x = "Dropoff Date", y = "Frequency", title = "Distribution of Dropoff Date") +
+  facet_wrap(~year(lpep_dropoff_datetime), scales = "free") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+### 1.1.2 Transform & clean date-time variable 
+
+We filter only 2018 data. 
+
+```{r}
+# Convert pickup date to weekday 
+tripdata_df$pickup_weekday <- weekdays(tripdata_df$lpep_pickup_datetime)
+
+# Convert dropoff date to weekday 
+tripdata_df$dropoff_weekday <- weekdays(tripdata_df$lpep_dropoff_datetime)
+
+# Filter data only in 2018
+tripdata_2018 <- tripdata_df %>% filter(year(pickup) == 2018 & year(dropoff) == 2018)
+
+```
+
+
+
+### 1.1.3 Correlation analysis between date and tip_amount
+```{r}
+# pickup day統計小費
+tripdata_2018 %>% 
+  group_by(pickup) %>% 
+  summarize(tip_total = sum(tip_amount)) %>% 
+  arrange(desc(tip_total))
+
+# Weekday 統計小費
+tripdata_2018 %>% 
+  group_by(pickup_weekday) %>% 
+  summarize(tip_total = sum(tip_amount)) %>% 
+  arrange(desc(tip_total))
+
+dummy_weekday <- dummyVars("~dropoff_weekday", data= tripdata_2018) %>% 
+  predict(tripdata_2018)
+
+
+combined_weekday_data <- data.frame(dummy_weekday, tripdata_2018$tip_amount)
+  
+# Get correlation matrix
+cor_matrix <- cor(combined_weekday_data , use = "pairwise.complete.obs")
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.5)
+```
+
+Weekday has no relationship between tip_amount.
+
+
+##1.2 Numeric Features Exploration
+
+### 1.2.1 Numeric Features Distribution
+
+```{r}
+num_var <- c("PULocationID", "DOLocationID", "passenger_count", "trip_distance", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", "improvement_surcharge", "total_amount")
+
+# Calculate the number of rows and columns for the grid
+num_cols <- 3
+num_rows <- ceiling(length(num_var) / num_cols)
+
+# Create histograms for all numerical variables
+par(mfrow=c(num_rows, num_cols), mar=c(4, 4, 2, 1))  # Set up a dynamic grid for subplots with adjusted margins
+for (var in num_var) {
+  hist(tripdata_2018[[var]], main = var, col = "skyblue")
+}
+
+par(mfrow=c(1, 1))  # Reset the layout to default
+
+```
+
+
+
+### 1.2.2 Numeric Features vs. Tip_amount (scatter plots)
+```{r}
+ggplot(tripdata_2018, aes(x = trip_distance, y = tip_amount)) +
+  geom_point()
+
+ggplot(tripdata_2018, aes(x = total_amount, y = tip_amount)) +
+  geom_point()
+
+```
+
+outliers:
+tip_amount > 200
+trip_distance >75
+total_amount > 500
+
+### 1.2.3 Correlation Matrix
+
+```{r}
+# select tip_amount < 200 & trip_distance < 75 & total_amount < 500
+filtered_df <- tripdata_2018 %>% 
+  filter(tip_amount < 200 & trip_distance < 75 & total_amount < 500)
+
+# Select numeric values > 0
+filtered_df <- filtered_df %>% 
+  filter(fare_amount >= 0 &
+           extra >= 0 &
+           mta_tax >= 0 &
+           tip_amount >= 0 &
+           improvement_surcharge >= 0 &
+           total_amount >= 0)
+
+# Select numerical variables to create correlation matrix
+numeric_vars <- filtered_df[num_var]
+
+# correlation matrix
+cor_matrix <- cor(numeric_vars , use = "pairwise.complete.obs") # ignore NA values
+
+# ggcorrplot(cor_matrix)
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.5)
+```
+
+- **Trip_distance** and **total_amount** and **tolls_amount** might be more related to tip_amount
+
+
+
+## 1.3 Categorical Features
+
+### 1.3.1 Categorical Features Distribution
+```{r}
+# Define Categorical Variables
+cat_var <- c("VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "trip_type")
+
+# Convert categorical variables to factors
+tripdata_2018[cat_var] <- lapply(tripdata_2018[cat_var], as.factor)
+
+# Set up the layout for subplots
+par(mfrow = c(2, 3))
+
+# Create bar plots for each factor variable
+for (var in cat_var) {
+  # Create a table of frequencies
+  table_data <- table(tripdata_2018[[var]])
+  
+  # Create a bar plot
+  barplot(table_data, main = var, col = "skyblue", xlab = var, ylab = "Count")
+}
+
+# Reset the layout to default
+par(mfrow = c(1, 1))
+
+```
+
+
+```{r}
+# Define Categorical Variables
+cat_var <- c("VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "trip_type")
+
+# Convert categorical variables to factors
+filtered_df[cat_var] <- lapply(filtered_df[cat_var], as.factor)
+
+# Set up the layout for subplots
+par(mfrow = c(2, 3))
+
+# Create bar plots for each factor variable
+for (var in cat_var) {
+  # Create a table of frequencies
+  table_data <- table(filtered_df[[var]])
+  
+  # Create a bar plot
+  barplot(table_data, main = var, col = "skyblue", xlab = var, ylab = "Count")
+}
+
+# Reset the layout to default
+par(mfrow = c(1, 1))
+
+```
+
+
+
+### 1.3.2 Display categorical features vs. tip_amout
+```{r}
+# Define categorical variables
+cat_var <- c("VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "trip_type")
+
+# Set up the layout for subplots
+par(mfrow = c(2, 3))
+
+# Create box plots for each factor variable
+for (var in cat_var) {
+  boxplot(tip_amount ~ get(var), data = tripdata_2018, col = "skyblue", main = var)
+}
+
+# Reset the layout to default
+par(mfrow = c(1, 1))
+
+```
+
+
+#### 1.3.3. No one-hot encoding
+```{r}
+# Select categorical variables data
+cat_df <- filtered_df %>% 
+  select(VendorID, RatecodeID, store_and_fwd_flag, payment_type, trip_type) 
+
+# Convert factor variables to numerics
+cat_2_num <- cat_df %>%
+  mutate_all(~as.numeric(.))
+
+# Combined cat_df and tip_amount
+combined_data <- data.frame(cat_2_num, tip_amount = filtered_df$tip_amount)
+
+# Exclude RatecodeID == 99
+combined_data <- combined_data %>% 
+  filter(RatecodeID != 99) 
+
+# Get correlation matrix
+cor_matrix <- cor(combined_data , use = "pairwise.complete.obs")
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.5)
+
+```
+
+
+**Payment_type** is more related
+
+
+### 1.3.3 Catgorical var cleaning, Transform one-hot encoding
+```{r}
+# ### Remove RatecodeID == 99
+# filtered_df <- filtered_df %>% 
+#   filter(RatecodeID != 99)
+
+# One-hot encoding for VendorID, RatecodeID, payment_type, trip_type
+dummy_data <- dummyVars(" ~ VendorID + RatecodeID + payment_type + trip_type", data = filtered_df)
+transformed_data <- predict(dummy_data, newdata = filtered_df)
+
+combined_data <- data.frame(transformed_data, store_and_fwd_flag = filtered_df$store_and_fwd_flag)
+
+
+# Convert factor variables to numerics
+cat_2_num <- combined_data %>%
+  mutate_all(~as.numeric(.))
+
+# Combined transformed_data and tip_amount
+combined_data <- data.frame(cat_2_num, tip_amount = filtered_df$tip_amount)
+
+
+# Remove RatecodeID.99 columns
+combined_data <- combined_data %>% select(-RatecodeID.99)
+
+
+# Get correlation matrix
+cor_matrix <- cor(combined_data , use = "pairwise.complete.obs")
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.5)
+
+```
+
+
+**Payment_type 1 and 2** are more related with tip_amount.
+
+
+• **Feature selection:** identify the features/variables that are good indicators and should be used to predict the tip amount. Note: this step involves selecting a subset of the features that will be used to build the predictive model. If you decide to omit any features/variables ensure that you briefly state the reason.
+
+According to correlation coefficients result, we select **Trip_distance** and **total_amount**, **tolls_amount**, and **Payment_type**
+
+```{r}
+# Feature selection
+selected_data <- filtered_df %>% 
+  select(trip_distance, total_amount, tolls_amount, payment_type, tip_amount)
+
+# Transform payment_type to dummy variables
+dummy_data <- dummyVars(" ~ payment_type", data = selected_data)
+transformed_data <- predict(dummy_data, newdata = selected_data)
+
+# Combined transformed dummy data and selected data
+combined_data <- data.frame(transformed_data, selected_data)
+
+# Remove payment_type
+combined_data <- combined_data %>% 
+  select(-payment_type)
+
+```
+
+
+
+• **Feature engineering:**  (+10 bonus points): create a new feature and analyze its effect on the target variable (e.g. the tip amount). Ensure that you calculate the correlation coefficient and also use visualizations to support your analysis. Summarize your findings and determine if the new feature is a good indicator to predict the tip amount. If it is, ensure that you include it in your model. If it is not a good indicator, explain the reason.
+
+
+
+
+# Q2 CRISP-DM: Data Preparation
+• Prepare the data for the modeling phase and handle any issues that were identified during the exploratory data analysis. At a minimum, ensure that you:
+• Preprocess the data: handle missing data and outliers, perform any suitable data transformation steps, etc. Also, ensure that you filter the data. The goal is to predict the tip amount, therefore you need to ensure that you extract the data that contains this information. Hint: read the data dictionary.
+
+```{r}
+# Summarize all NA values in variables
+colSums(is.na(combined_data))
+
+
+```
+
+There is no NA values in the selected data.
+
+
+
+• **Normalize the data:** perform either max-min normalization or z-score standardization on the continuous variables/features.
+
+```{r}
+# Normalize the numerical variables in the data set
+# Define a function for min-max normalization
+min_max_normalize <- function(x) { (x - min(x)) / (max(x) - min(x))
+}
+# min-max normalization
+normalized_subset <- data.frame(lapply(normalized_df[, 1:8], min_max_normalize))
+
+normalized_df <- data.frame(normalized_df, tip_amount = combined_data$tip_amount)
+
+normalized_df <- normalized_df %>% 
+  select(-c(combined_data.tip_amount, tip_amount.1, tip_amount.2))
+
+```
+
+
+• **Encode the data:** determine if there are any categorical variables that need to be encoded and perform the encoding.
+
+
+
+• Prepare the data for modeling: shuffle the data and split it into training and test sets. The percent split between the training and test set is your decision. However, clearly indicate the reason.
+
+```{r}
+# Setting seed for reproducibility
+set.seed(123) 
+
+# Create an index for the training set (80%) and the test set (20%)
+index <- createDataPartition(new_data$tip_amount, p = 0.8, list = FALSE) # Create training set
+
+data_train <- normalized_df[index, ] # Create test set
+data_test <- normalized_df[-index, ]
+
+# Display the dimensions of the training and test sets
+cat("Training set dimensions:", dim(data_train), "\n")
+```
+
+
+
+# Question 3
+In this step you will develop the k-nn regression model. Create a function with the following name and arguments: knn.predict(data_train, data_test, k);
+Perform the following logic inside the function:
+Implement the k-nn algorithm and use it to predict the tip amount for each observation in the test set i.e. data_test.
+• Note: You are not required to implement the k-nn algorithm from scratch. Therefore, this step may only involve providing the training set, the test set, and the value of k to your chosen k-nn
+library.
+• Calculate the mean squared error (MSE) between the predictions from the k-nn model and the actual tip amount in the test set.
+• The knn-predict() function should return the MSE.
+
+
+```{r}
+knn.predict <- function(data_train, data_test, k) {
+  
+  # Extract predictors and response from training data
+  predictors_train <- data_train %>% select(-tip_amount)
+  response_train <- data_train$tip_amount
+  
+  # Extract predictors and true response from test data
+  predictors_test <- data_test %>% select(-tip_amount)
+  y_truth <- data_test$tip_amount
+
+  # Train the KNN regression model
+  knn_model <- FNN::knn.reg(train = predictors_train, 
+                            test = predictors_test, 
+                            y = response_train, k = k)
+
+  # Extract predicted values
+  y_pred <- knn_model$pred
+
+  # Calculate Mean Squared Error (MSE)
+  mse <- mean((y_truth - y_pred)^2)
+  
+  return(mse)
+}
+
+```
+
+
+```{r}
+# knn.predict(data_train = data_train, data_test = data_test, k = 3)
+
+```
+
+
+```{r}
+# knn.predict(data_train = data_train, data_test = data_test, k = 10)
+
+```
+
+
+
+# Question 4. 
+**CRISP-DM: Evaluation**
+• Determine the best value of k and visualize the MSE. This step requires selecting different values of k and evaluating which produced the lowest MSE. At a minimum, ensure that you perform the following:
+• Provide at least 20 different values of k to the knn.predict() function (along with the training set and the test set).
+Tip: use a loop! Use a loop to call knn.predict() 20 times and in each iteration of the loop, provide a different value of k to knn.predict(). Ensure that you save the MSE that’s returned.
+• Create a line chart and plot each value of k on the x-axis and the corresponding MSE on the y-axis.
+Explain the chart and determine which value of k is more suitable and why.
+• What are your thoughts on the model that you developed and the accuracy of its predictions?
+Would you advocate for its use to predict the tip amount of future trips? Explain your answer.
+
+```{r}
+# Create a vector of different values of k
+k_values <- seq(1, 20)
+
+# Initialize an empty vector to store MSE values
+mse_values <- numeric(length(k_values))
+
+# Loop through each value of k
+for (i in seq_along(k_values)) {
+  mse_values[i] <- knn.predict(data_train, data_test, k_values[i])
+}
+
+# Create a data frame for plotting
+mse_df <- data.frame(k = k_values, mse = mse_values)
+
+# Plot the line chart
+ggplot(mse_df, aes(x = k, y = mse)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "MSE vs. k in k-nn Regression",
+       x = "Value of k",
+       y = "Mean Squared Error") +
+  theme_minimal()
+
+# Find the k value with the lowest MSE
+best_k <- mse_df$k[which.min(mse_df$mse)]
+cat("The value of k with the lowest MSE is:", best_k, "\n")
+
+
+
+```
+
+
+
+```{r}
+
+
+
+```
+
+
+
+```{r}
+# creating vector of all training and testing data splits from 0.1 to 0.9 at an increment of 0.01
+splits <- seq(0.1,0.9,0.1)
+
+
+# create an empty data frame to store Data_Training_Percentage and MSE values
+df_split <- data.frame(matrix(ncol = 2, nrow = length(splits)))
+z <- c("Data_Training_Percentage", "MSE")
+colnames(df_split) <- z
+
+# make createDataPartition of training and test data reproducible by setting a seed
+set.seed(18)
+
+#using a loop to call knn.predict() for each training and testing data percentage split with a constant value for k
+for (i in 1:length(splits)) {
+  df_split$Data_Training_Percentage[i] <- splits[i]
+  indexing <- createDataPartition(normalized_df$tip_amount, p = splits[i], list = FALSE)
+  trip_train <- normalized_df[indexing, ]
+  trip_test <- normalized_df[-indexing, ]
+  df_split$MSE[i] <- knn.predict(data_train = trip_train, data_test = trip_test, k = 10)
+}
+
+# identifying the minimum MSE and associated data training and testing percentages from the data training and testing percentage splits iterated through knn.predict
+min_split_MSE <- min(df_split$MSE)
+min_split_index <- which.min(df_split$MSE)
+min_split_train <- df_split$Data_Training_Percentage[min_split_index]
+
+cat(sprintf("The minimum MSE is %f with an associated data training percentage of %.2f and an associated test training percentage of %.2f.\n",
+            min_split_MSE, min_split_train, 1 - min_split_train))
+
+
+# creating a line chart to plot Data Training Percentage (Data Testing Percentage = 1 - Data Training Percentage) and MSE values
+ggplot(data = df_split, aes(x = Data_Training_Percentage, y = MSE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Squared Error (MSE) versus Data Training Percentage for Green Taxi Tip Amount",
+       x = "Training Data Percentage",
+       y = "MSE",
+       caption = "Optimizing the k-nn model by evaluating the effect of the training and testing data percentage split on the MSE with a fixed k value. The x-axis shows the data training percentage (data testing percentage = 1 - data training percentage)") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```

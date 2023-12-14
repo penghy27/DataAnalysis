@@ -1,0 +1,608 @@
+---
+title: "DA5020.P3.Hsiao-Yu.Peng"
+author: "Chandani Shrestha, Joshua Okon, and Hsiao-Yu Peng"
+date: "2023-12-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(caret)
+library(readr)
+library(ggplot2)
+library(psych)
+library(skimr)
+library(ggcorrplot)
+library(caret)
+# library(reshape)
+library(lubridate)
+library(FNN)
+```
+
+
+# Question 1
+## CRISP-DM: Data Understanding
+• **Load** the NYC Green Taxi Trip Records data into a data frame or tibble.
+• **Data exploration**: explore the data to identify any patterns and analyze the relationships between the features and the target variable i.e. tip amount. At a minimum, you should analyze: 1) the distribution, 2) the correlations 3) missing values and 4) outliers — provide supporting visualizations and explain all your steps.
+
+### Data Exploration
+```{r}
+tripdata_df<-read_csv("2018_Green_Taxi_Trip_Data.csv")
+
+dim(tripdata_df)
+head(tripdata_df)
+glimpse(tripdata_df)
+str(tripdata_df)
+anyNA(tripdata_df)
+
+# look for NAs in each column
+sapply(tripdata_df, function(x) sum(is.na(x)))
+summary(tripdata_df)
+
+```
+
+We loaded the NYC Green Taxi Trip Records data on R and did some data exploration. There are 1,048,575 rows and 19 columns. Out of 19 variables all are numerics except 4 variables. lpep_pickup_datetime,lpep_dropoff_datetime and store_and_fwd_flag are character type, and ehail_fee is logical type. 
+
+We can see from our glimpse, str and summary, and as well as inforamtion from data dictionary, we have lots of categorical variables in our data. And we should choose our visualization accordingly for data exploration. VendorID, RatecodeID, store_and_fwd_flag, PULocationID, DOLocationID, payment_type and trip_type are categorical varaibles.
+
+There are some NA values in the data. fare_amount and total_amount has 5, trip_type has 3 and ehail_fee entirely consists of NAs only. With the summary data, we can see that trip_distance, fare_amount, tip_amount, tolls_amount, total_amount have very huge difference in maximum and minimum values - some minimum value in negative and maximum value in hundreds, this indicate that those categories may have outliers.
+
+
+In order to further analysis, we first splitted the data into 3 data frames - categorical_df contains all categorical values and tip_amount. numeric_df contains all continuous varaibles and tip_amount. And finally, date_df which contains pickup, dropoff dates and location with tip_amount. Further, since we are analyzing the data from 2018, we observed that there are some data from 2009 which we filtered out as well.We have decided to not to include mta_tax,improvement_surcharge, extra in our numeric data as they both have fixed certain values and we will ne creating bar plots for those. ehail_fee has only NAs so there is no point in creating a plot.
+
+
+```{r}
+# select only the categorical variables and target variable - tip_amount
+categorical_df <- tripdata_df %>%
+  select(VendorID, RatecodeID, store_and_fwd_flag,payment_type, trip_type, tip_amount)
+head(categorical_df)
+
+# select only the continuous varaible and target varaible - tip_amount
+numeric_df <- tripdata_df %>%
+  select(passenger_count, trip_distance, fare_amount, tip_amount, tolls_amount, total_amount)
+  
+head(numeric_df)
+
+
+```
+
+
+#### Data exploration and visualization for categorical variables and target variable
+
+```{r}
+# relation between categorical variables and tip amount
+col_to_fac <- c("VendorID","RatecodeID","store_and_fwd_flag", "payment_type", "trip_type")
+
+factor_df <- categorical_df %>%
+  mutate(across(col_to_fac, as.factor))
+
+for (col in col_to_fac) {
+  print(ggplot(factor_df, aes(x = .data[[col]], y = tip_amount, fill = .data[[col]])) +
+    geom_boxplot() +
+    labs(title = paste("Box Plot of Tip Amount by", col), x = col, y = "Tip Amount in dollars", caption = "Plots for relationship between categorical variables and tip_amount"))
+}
+
+```
+
+Based on the box plot for VendorID, we can see that the shape of the box is similar which indicate similar data dispersion in both ID 1 and ID 2. However, both the IDs have outliers and the outlier tip amounts are on the higher side.
+
+Based on the box plot for RatecodeID, we can see that except for ID 6 and 99 all have outliers and ID 1 and 5 also have negative tip amounts as outliers. The the boxes for 2 , 3 and 4 seems longer which indicate that there is variability in the data.
+
+Based on the store_and_fwd_flg box plot, we can observe that category 'N' has higher tip_amount as outliers than 'Y' category.
+
+Based on the payment_type plot, we can see that type 1 is the one with highest outliers. Type 5 dont have any outliers.
+
+Based on trip_type plot, we can see that type 1 has more outliers than type 2, and both categories have negative tip amount as oultiers as well. And we can see that there are some NA values as well.
+
+
+#### Distribution of the numeric features
+
+For better visualization of the data we are using log scale. We used the numeric_df to look at the distribution of the data.
+
+```{r}
+# rescale the y-axis using a log scale to improve the visualization
+histograms <- lapply(1:ncol(numeric_df), function(i) {
+  ggplot(data = numeric_df, aes(x = numeric_df[[i]])) +
+    geom_histogram(binwidth = 1, fill = "lightblue", color = "black") +
+    labs(
+		title = paste("Distribution of",names(numeric_df)[i]),
+		subtitle = "Frequency distribution with log-scaled y-axis",
+		x = paste(names(numeric_df)[i]),
+		y = "Frequency (log scale)",
+	    caption = "Chart created for data distribution analysis") +
+    scale_y_log10()  # Add log scale to the y-axis
+})
+
+print(histograms)
+
+```
+
+From the passenger_count histogram that, lesser passengers count(fewer thab 2) is more common than more than 5 passengers.
+
+Our target variable, tip_amount is right skewed, it is due to higher number of occurrence of lower values(i.e. on the left side) and lesser occurrences of the larger values which are on the right side, thats why it forms a tail like structure on the right.
+
+Similar pattern of distribution is seen for trip_distance, fare_amount, tolls_amount. However, distribution for total_amount looks fairly normal, looks peak somewhat centered.
+
+
+#### Bar plots for categorical variables
+```{r}
+bar_df <- tripdata_df %>%
+  select(VendorID, RatecodeID, store_and_fwd_flag,payment_type, trip_type, mta_tax, improvement_surcharge, extra)
+
+barplots <- lapply(1:ncol(bar_df), function(i) {
+  ggplot(data = categorical_df, aes(x = bar_df[[i]])) +
+    geom_bar(fill = "blue", color = "black") +
+    labs(
+      title = paste("Distribution of", names(bar_df)[i]),
+      x = paste(names(bar_df)[i]),
+      y = "Frequency",
+      caption = "Chart created for data distribution analysis"
+    )  # Add log scale to the y-axis
+})
+
+print(barplots)
+```
+
+
+According to bar plot above, we can see that VendID '2' (VeriFone Inc) has higher frequency than ID 1 - Creative Mobile Technologies, LLC.
+
+The most prevalent Ratecode is 1 which is Standard rate.
+
+From the store_and_fwd_flag barplot we can observe that most of the trip record were not stored before forwarding i.e type "N" was more than type "Y".
+
+From payment_type bar plot we can observe that, among 5 types of payment payment type 1 i.e Credit card was the most common one and type 2 i.e Cash is second most common one. Least were categorized as unknown type i.e type 5.
+
+Stree_hail(trip_type 1) was the most common one than dispatch(type 2) trip type.
+
+Most of the trips were charged \$0.4 as MTA tax and fewer were charged -$0.4 according to mta_tax barplot. Similarly, \$0.25 improvement surcharge was the most common one accoring to improvement surcharge barplot.
+
+Finally, \$0 extra charge was the most common, most charges were lesser than $1.
+
+
+#### Relationship between date and tip amount.
+
+We only first converted pickup date and dropoff date into date-time format using lubridate. And we also extracted hour of the day and only selected 2018 data as there were some 2009 data as well. Wethne grouped by the pickup and dropoff hour and claculated mean tip amount.
+
+```{r}
+# select pickup, dropoff dates, pickup, dropoff locations and tip_amount and put in a new data frame
+
+date_df <- tripdata_df %>%
+  mutate(
+    lpep_pickup_datetime = mdy_hm(lpep_pickup_datetime),
+    lpep_dropoff_datetime = mdy_hm(lpep_dropoff_datetime)
+  ) %>%
+  select(lpep_pickup_datetime,lpep_dropoff_datetime,tip_amount,PULocationID,DOLocationID)
+
+summary(date_df)
+
+# select only data from 2018 because it had some data from 2009 as well
+date_df <- date_df %>%
+  mutate(hour_of_pickup = hour(lpep_pickup_datetime)) %>%
+  mutate(hour_of_dropoff = hour(lpep_dropoff_datetime)) %>%
+  mutate(year_of_pickup = year(lpep_pickup_datetime))  %>%
+  filter(year_of_pickup == 2018)
+
+summary(date_df)
+
+# Group by hour and calculate the mean tip_amount for each hour, for pickup
+hourly_tip_mean <- date_df %>%
+  group_by(hour_of_pickup) %>%
+  summarise(mean_tip_amount = mean(tip_amount, na.rm = TRUE))
+
+# Group by hour and calculate the mean tip_amount for each hour, for dropoff
+hourly_tip_mean2 <- date_df %>%
+  group_by(hour_of_dropoff) %>%
+  summarise(mean_tip_amount = mean(tip_amount, na.rm = TRUE))
+
+
+ggplot(hourly_tip_mean, aes(x = hour_of_pickup , y = mean_tip_amount)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Tip Amounts by Hour of the Day based on Pickup",
+      x = "Hour of the Day",
+      y = "Mean tip Amount",
+      caption = "Chart created for relationship analysis of tip amount and time of the day")
+
+ggplot(hourly_tip_mean2, aes(x = hour_of_dropoff , y = mean_tip_amount)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Tip Amounts by Hour of the Day based on Dropoff",
+        x = "Hour of the Day",
+       y = "Mean tip Amount",
+      caption = "Chart created for relationship analysis of tip amount and time of the day")
+
+```
+
+We found out that, tip amount varies based on hour of the day.For both pickup hour and drop off hour we got similar bar plots, showing higher tip amount in the early morning and late nights, and lower tip amount during the afternoons.
+
+
+#### tip amount based on pickup and drop off location
+
+In order to see if tip amount varies based on location we also grouped our data based on PULocation and DOLocation.
+
+```{r}
+date_df %>%
+  group_by(PULocationID) %>%
+  summarise(mean_tip_amount = mean(tip_amount, na.rm = TRUE)) %>%
+  arrange(desc(mean_tip_amount)) %>%
+  head(5)
+
+date_df %>%
+  group_by(DOLocationID) %>%
+  summarise(mean_tip_amount = mean(tip_amount, na.rm = TRUE)) %>%
+   arrange(desc(mean_tip_amount)) %>%
+  head(5)
+
+
+```
+
+The mean tip maount varies based on location of pickup and drop off. The top 5 pickup location with highest mean tip amount were, 1, 99, 214, 132 and 138. And top 5 dropoff location with the highest mean tip mount were 1, 204,214, 84 and 245. Compared to dropoff pickup, pickup location 1 has the highest mean tip, with \$16.42. While highest tip at drop off location was $12.85 at location 1.
+
+
+### Correlation
+```{r}
+# select only the data with numeric type
+all_num <- tripdata_df %>%
+  select_if(is.numeric)
+# correlation with numerical valiues
+corr <- cor(all_num, use="complete.obs")
+
+print(corr)
+
+# visualize the correlation between variables
+ggcorrplot(corr)
+
+```
+
+We did calculated correlation coefficient between all the numeric variables and also created a correlation matrix using ggcorrplot. First looking correlation between our response variable and other variables, we observed that - trip_distance and fare_amount have small positive correaltion toward tip_amount with the correlation coefficient around 0.30. The toll_amount minimal positive correlation with 0.14 with tip amount. However total_amount and payment_type had moderative correlation with the tip_amount - total_amount has positive correlation with 0.47 and payment_type has negative correaltion.
+
+Besides the realtionship between response and other independent variables, some variables are highly correlated to each other. The correlation coeeficint between improvement_surcharge and mta_tax, and total_amount and fare_amount is 0.98 which indicates those are very strongly positively correlated. Similarly, value of RateCodeID and trip_type, and fare_amount and trip_distance is about 0.9 which also indicated strong positive correlation. The mta_tax and RateID has strong negative correaltion with -0.76, so is improvement_Surcharge and RateCodeID with the similar value. The trip_type and mta_tax, and trip_type and improvement_surcharge also has strong negative correaltion respectively with value of -0.79. The total_amount and trip_distance has also strong positive correaltion with 0.89. Lastly, tolls_amount and trip_distance, and tolls_amount and fare_amount are weakly positively correlated with values around 0.2.
+
+
+### Look for outliers
+
+From the summary statistics above, we came to know that some of our variables have very extreme differences in minimum and maximum values, which shows an indication of presence of outliers. Hence, we visualize the outliers using box plots for all our numerical values.
+
+```{r}
+# boxplots to look for outliers
+boxplots <- lapply(1:ncol(numeric_df), function(i) {
+  ggplot(data = numeric_df, aes(x = factor(1), y = numeric_df[[i]])) +
+    geom_boxplot(fill = "blue", color = "black") +
+    labs(
+      title = paste("Box plot of", names(numeric_df)[i]),
+      subtitle = "Outlier analysis",
+      x = "Category",
+      y = paste(names(numeric_df)[i]),
+      caption = "Box plots created to visualize and analyze outliers"
+    )
+})
+
+print(boxplots)
+
+```
+
+From the box plot, we can see that all the plots have few or more outliers. passenger_count, trip_distance, fare_Amount, tip_Amount, tolls_amount and total_amount have highest numbers of outliers. Except for total_amount and fare_amount almost all outliers were on the higher side of the amount, but these two varaibles also have outliers in negative amount.
+
+
+## Feature selection
+
+We only took data from 2018. And again did a correlation coeffient calculations and evaluate which varaibles have greater influence on tip_amount. To also look at the relation of pickup hour and tip amount, we created a new feature called "hour_of_pickup". While calculating the correlation coefficients we also included that new feature in the data frame.
+
+```{r}
+dist_data <- tripdata_df %>%
+  mutate(
+    lpep_pickup_datetime = mdy_hm(lpep_pickup_datetime),
+    lpep_dropoff_datetime = mdy_hm(lpep_dropoff_datetime)) %>%
+  mutate(year_of_pickup = year(lpep_pickup_datetime),
+		hour_of_pickup = hour(lpep_pickup_datetime)) %>%
+
+  filter(year_of_pickup == 2018) %>%
+  select(-lpep_pickup_datetime, -lpep_dropoff_datetime, -year_of_pickup, -ehail_fee)
+
+dist_data$store_and_fwd_flag <- as.integer(factor(dist_data$store_and_fwd_flag, levels = c("Y", "N")))
+  
+corr <- cor(dist_data, use="complete.obs")
+
+print(corr)
+
+# visualize the correlation between variables
+ggcorrplot(corr)
+
+```
+
+By using the ggcorrplot and the correlation matrix, we can evaluate which features to select. We are considering features which have high correlation with the response variable tip_amount. We are selecting the variables which have at least > +/-0.1 correlation coefficient. So, we observed that trip_distance and fare_amount have slight positive correlation with tip_amount with the value of about 0.30. The tip_amount also has slight positive correlation with toll_amount with corrlation coefficient of 0.138. And moderate positive correlation with total_amount with 0.47 value, meanwhile tip_amount has moderate negative correlation with payment_type with the value of -0.5.
+
+Hence, we are selecting trip_distance, fare_amount, toll_amount, total_amount and payment_type as our features.
+
+Besides the relationship between response and other independent variables, some variables are highly correlated to each other. The correlation coefficient between improvement_surcharge and mta_tax, and total_amount and fare_amount is 0.98 which indicates those are very strongly positively correlated. Similarly, value of RateCodeID and trip_type, and fare_amount and trip_distance is about 0.9 which also indicated strong positive correlation. The mta_tax and RateID has strong negative correlation with -0.76, so is improvement_Surcharge and RateCodeID with the similar value. The trip_type and mta_tax, and trip_type and improvement_surcharge also has strong negative corrlation respectively with value of -0.79. The total_amount and trip_distance has also strong positive correlation with 0.89.  Lastly, tolls_amount and trip_distance, and tolls_amount and fare_amount are weakly positively correlated with values around 0.2. This multicollinearity between different independent variables would lead to significant fluctuation on resultant model as change in one variable will also cause change in another variable. This will result in unstable model as there will be a lot of variability in it even made some small changes on the data or model. Moreover, those relation between response variable i.e. tip_amount and other independent variables is comapratively lower than the relationships between the independent variables. Hence, these variables which have strong correlation with each other should not be included as features.
+
+
+## Bonus (Feature engineering)
+We created a new feature called "hour_of_pickup". While calculating the correlation coefficients we also included that new feature in the data frame in the above correlation matrix.
+
+```{r}
+# create a scatter plot of tip_amount vs hour_of_pickup
+ggplot(dist_data, aes(x = hour_of_pickup, y = tip_amount)) +
+  geom_point() +
+  labs(title = "Scatter Plot: Tip Amount vs Hour of Pickup",
+       x = "Hour of Pickup",
+       y = "Tip Amount",
+	  caption = "Relation between tip amount and new feature")
+
+```
+
+From the correltion matrix we found that the correlation coeffient between tip_amount and hour_of_pickup is really low with the value 0.0036352067. Also, extra and hour_of_pickup are also slightly positively correlated with correlation co-effient of 0.33, which is higher than the value it had with target variable - tip_amount. The scatter plot also shows poor correlation netween those two variables. Hence, we consider not to include that varaible as feature, as this variable has negligible influence on our target varaible.
+
+
+# Question 2
+
+##CRISP-DM: Data Preparation
+• Prepare the data for the modeling phase and handle any issues that were identified during the exploratory data analysis. 
+
+### Preprocess the data: 
+Based on the feature selection we are selecting, trip distance, toll amount, total amount, payment type and response variable tip amount for preprocessing the data for our model. As from our data exploration we came to know that one of our features have NAs in it. Hence we imputed the NAs with the mean of that value, this preserves the mean of the observed values.
+
+And we again confirmed if there are any NAs left in our data and we didnot find any. 
+
+```{r}
+# select the features and response variable from our filtered data
+model_df <- dist_data %>%
+  select(trip_distance, tolls_amount, total_amount, payment_type, tip_amount)
+
+# impute missing values with the mean amount
+model_df <- model_df %>%
+  mutate(total_amount = replace(total_amount, is.na(total_amount), mean(total_amount, na.rm = TRUE)))
+
+# check if NA values left
+sapply(model_df, function(x) sum(is.na(x)))
+
+```
+
+Based on the box-plot above for trip distance, toll amount, total amount, payment type and tip amount, we can see that there is presence of outliers. We consider z-score > 3 as outliers and we will filter out those values for the respective columns. First we create a function which calcualtes the z-score. Using that function we removed outliers from trip_distance, tolls_amount, tip_amount and total_amount one by one. We are excluding our payment_type variable as its a categorical variable.
+
+```{r}
+# look for outliers and filter the data
+# function for z_score calculation
+z_score <- function(x) {
+  x_mean <- mean(x,na.rm=TRUE)
+  x_std <- sd(x,na.rm=TRUE)
+  z <- abs(x_mean-x)/x_std
+  return(z)
+}
+
+
+for_tip_amount <- model_df %>%
+mutate(z_score_tip = z_score(tip_amount)) %>%
+# filter outliers
+filter(z_score_tip <= 3)
+
+for_trip_dist <- for_tip_amount %>%
+mutate(z_score_trip = z_score(trip_distance)) %>%
+# filter outliers
+filter(z_score_trip <= 3)
+
+for_tolls_amount <- for_trip_dist %>%
+mutate(z_score_toll = z_score(tolls_amount)) %>%
+# filter outliers
+filter(z_score_toll <= 3)
+
+filtered_df <- for_tolls_amount %>%
+mutate(z_score_total = z_score(total_amount)) %>%
+# filter outliers
+filter(z_score_total <= 3)
+
+# select only the required variables and remove the z-scores columns
+filtered_df <- filtered_df %>%
+select(trip_distance, tolls_amount, total_amount, payment_type, tip_amount)
+
+dim(filtered_df)
+head(filtered_df)
+dim(model_df)
+# number of outliers
+total_outliers <- nrow(model_df) - nrow(filtered_df)
+total_outliers
+str(filtered_df)
+
+
+```
+
+The data which had 1048514 rows previously was decreased to 995322 after removal of outliers. There were 53192 outliers in our data frame for modeling.
+
+
+### Normalize the data: 
+
+Perform either max-min normalization or z-score standardization on the continuous variables/features.
+
+```{r}
+summary(filtered_df)
+
+```
+
+```{r}
+# select columns to normalize
+# not selecting payment_type as its a categorical variable
+# only selecting trip_distance, tolls_amount and total_amount
+selected_columns<-c(1:3)
+# used preProcess function from caret package
+# max-min normalization
+preproc1<- preProcess(filtered_df[,selected_columns], method=c("range"))
+
+# normalization transformation
+normalized_df <- predict(preproc1, filtered_df[,selected_columns])
+tip_amount <- filtered_df$tip_amount
+payment_type <- filtered_df$payment_type
+normalized_df <- cbind(normalized_df, tip_amount, payment_type)
+str(normalized_df)
+
+```
+
+We used functions from caret package to normalize the data and used min-max normalization. We only selected trip_distance, tolls_amount and total_amount, and left payment_type as its a categorical varaible. We then applied normalization tansforamtion to the slected columns using the predict() function. Created a new dataframe and added the tip_amount and payment_type to the new data frame.
+
+
+### Encode the data: 
+Convert to dummy code for our categorical variable - payment_type
+
+```{r}
+payment_type <- as.data.frame(dummy.code(normalized_df$payment_type))
+normalized_df <- cbind(normalized_df, payment_type)
+normalized_df <- normalized_df %>% select(-payment_type)
+col_names <- c("credit_card", "cash", "no_charge", "dispute", "unknown")
+colnames(normalized_df)[5:9] <- col_names
+head(normalized_df)
+
+str(normalized_df)
+
+```
+
+
+## Prepare the data for modeling
+
+We used createDataPArtition() function from caret package to split our data into taining and testing set. This ensures maintinance of the distribution of target variable - tip_amount values in both traing and testing sets.
+
+```{r}
+set.seed(42)
+
+# 'Outcome' is the response variable
+indx <- createDataPartition(normalized_df$tip_amount, p = 0.8, list = FALSE)
+trip_train <- normalized_df[indx, ]  # train data
+trip_test <- normalized_df[-indx, ]  # test data
+head(trip_train)
+head(trip_test)
+
+```
+
+For our model, we chose to split our training and testing data into 80-20 ratio. Though this is a commmon choice, it achieves a balance between having a enough amount of data for training the model and another set for assessing how well it performs.
+
+
+
+# Question 3
+
+## CRISP-DM: Modeling
+• In this step, develop the k-nn regression model. Create a function with the following name and arguments: knn.predict(data_train, data_test, k);
+• data_train represents the observations in the training set,
+• data_test represents the observations from the test set, and
+• k is the selected value of k (i.e. the number of neighbors).
+
+```{r}
+knn.predict <- function(data_train, data_test, k) {
+	
+	# Extract predictors and response from training data
+  predictors_train <- data_train %>% select(-tip_amount)
+  response_train <- data_train$tip_amount
+  
+  # Extract predictors and true response from test data
+  predictors_test <- data_test %>% select(-tip_amount)
+  y_truth <- data_test$tip_amount
+
+  # Train the KNN regression model
+  knn_model <- knn.reg(train = predictors_train, 
+                       test = predictors_test, 
+                       y = response_train, k = k)
+
+  # Extract predicted values
+  y_pred <- knn_model$pred
+
+  # Calculate Mean Squared Error (MSE)
+  mse <- mean((y_truth - y_pred)^2)
+
+  # Returning the MSE
+  return(mse)
+}
+```
+ 
+ 
+
+# Question 4
+
+## CRISP-DM: Evaluation
+• Determine the best value of k and visualize the MSE. This step requires selecting different values of k and evaluating which produced the lowest MSE. At a minimum, ensure that you perform the following:
+• Provide at least 20 different values of k to the knn.predict() function (along with the training set and the test set).
+• Create a line chart and plot each value of k on the x-axis and the corresponding MSE on the y-axis. Explain the chart and determine which value of k is more suitable and why.
+
+
+```{r}
+# create 20 different values of k from 4 to 100 without duplicates
+sample <- c(6,10,14,18,22,25,36,38,42,48,54,63,67,70,72,79,81,86,93,99)
+ 
+# create an empty data frame to store k and MSE values
+df_knn <- data.frame(matrix(ncol = 2, nrow = 20))
+y <- c("k", "MSE")
+colnames(df_knn) <- y
+ 
+# using a loop to call knn.predict() for 20 values of k
+for (i in 1:length(sample)){
+    df_knn$k[i] <- sample[i]
+    df_knn$MSE[i] <- knn.predict(data_train = trip_train, data_test = trip_test, k = sample[i])
+}
+df_knn
+ 
+# identifying the minimum MSE and associated k value from the 20 k values iterated through knn.predict
+min_knn_MSE <- min(df_knn$MSE)
+min_knn_k <- df_knn[df_knn$MSE == min_knn_MSE, "k"]
+print(paste0("The minimmum MSE is ", min_knn_MSE, " with an associated k value of ", min_knn_k,"."))
+ 
+# creating a line chart to plot k and MSE values
+ggplot(data = df_knn, aes(x = k, y = MSE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Squared Error (MSE) versus k for Green Taxi Tip Amount",
+	   caption = "Determining the most suitable value of k by evaluting which k produces the lowest MSE.") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+The above line chart shows the MSE value for each k value iterated through the knn.predict function. The 20 k values were randomly selected from a range of values between 4 and 100. The line chart shows that as the k value increases, the MSE value increases too. The line graph therefore shows that the minimum MSE value of 0.331 is associated with a k value of 6.
+
+In assessing this knn model and the accuracy of its predictions, it's important to consider the guidelines for selecting a k value. The guidlines state that it is wise to start with a k value that is equivalent to the square root of the number of cases in the training data set. The number of cases in the training data set is 789,156 (0.8 multiplied by 986,445 total cases). The square root of 789,156 is approximately 888. As shown below, the knn.predict function was run for a k value of 888 and resulted in an MSE value of 0.600. This MSE value is greater than the 0.331 value associated with a k value of 6. Therefore, I am more likely to advocate for utilizing a k value of 6 for accurately predicting the tip amount of future trips over using a k value of 888. The smaller MSE value for a k value of 6 indicates that the data fits the k = 6 model better than k = 888 model.   
+
+```{r}
+knn_k <- knn.predict(data_train = trip_train, data_test = trip_test, k = 888)
+print(paste0("The MSE value for a k value of 888 is ", knn_k,"."))
+```
+
+
+
+# Question 5
+**Evaluate the effect of the percentage split for the training and test sets and determine if a different split ratio improves your model’s ability to make better predictions.**
+
+```{r}
+# creating vector of all training and testing data splits from 0.01 to 0.99 at an increment of 0.01
+splits <- seq(0.01,0.99,0.01)
+
+# create an empty data frame to store Data_Training_Percentage and MSE values
+df_split <- data.frame(matrix(ncol = 2, nrow = 99))
+z <- c("Data_Training_Percentage", "MSE")
+colnames(df_split) <- z
+
+# make createDataPartition of training and test data reproducible by setting a seed
+set.seed(18)
+
+# using a loop to call knn.predict() for each training and testing data percentage split with a constant value for k
+for (i in 1:length(splits)){
+	df_split$Data_Training_Percentage[i] <- splits[i]
+	indexing <- createDataPartition(normalized_df$tip_amount, p = splits[i], list = FALSE)
+	trip_train <- normalized_df[indexing, ]
+	trip_test <- normalized_df[-indexing, ]
+	df_split$MSE[i] <- knn.predict(data_train = trip_train, data_test = trip_test, k = 10)
+}
+
+# identifying the minimum MSE and associated data training and testing percentages from the data training and testing percentage splits iterated through knn.predict
+min_split_MSE <- min(df_split$MSE)
+min_split_train <- df_split[df_split$MSE == min_split_MSE, "Data_Training_Percentage"]
+print(paste0("The minimmum MSE is ", min_split_MSE, " with an associated training data percentage of ", min_split_train," and an associated testing data percentage of ", round(1-min_split_train, digits = 2),"."))
+
+# creating a line chart to plot Data Training Percentage (Data Testing Percentage = 1 - Data Training Percentage) and MSE values
+ggplot(data = df_split, aes(x = Data_Training_Percentage, y = MSE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Mean Squared Error (MSE) versus Training Data % for Green Taxi Tip Amount",
+	     x = "Training Data Percentage",
+	     y = "MSE",
+       caption = "Optimizing the k-nn model by evaluating the effect of the training and testing data percentage split on the MSE with a fixed k value.") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+Based on the above results, it appears that a greater training data percentage leads to a lower MSE. Therefore, as the training data percentage increases, the data better fits the knn-model. Logically, this makes sense for any machine learning algorithm because as the algorithm is supplied with more training data to teach the algorithm, the testing data is better prepared to validate the algorithm's training progress and the model is optimized for improved results. According to the results, a training data percentage of 0.95 and a testing data percentage of 0.05 lead to the minimum MSE value of 0.341.

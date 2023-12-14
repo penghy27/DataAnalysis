@@ -1,0 +1,183 @@
+---
+title: "DA5020.A3.Hsiao-Yu.Peng"
+author: "Hsiao-Yu Peng"
+date: "2023-09-24"
+output: pdf_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+```
+
+
+### Q1 See the attached certificate.
+
+
+### Q2
+```{r}
+# load NYC Green Taxi Trip Record
+# tripdata_df <- read_csv("~/Desktop/2023Fall_Syllabus/DA5020/week3/2018_Green_Taxi_Trip_Data.csv")
+tripdata_df<-read.delim2("~/Desktop/2023Fall_Syllabus/DA5020/week3/2018_Green_Taxi_Trip_Data.csv", header= TRUE,sep=",",na.strings=c(""))
+
+# dataset overview
+dim(tripdata_df)
+glimpse(tripdata_df)
+summary(tripdata_df)
+
+# Check any NA values in the dataset
+# sapply(tripdata_df, function(x) sum(is.na(x)))
+```
+
+This dataset has 19 variables and 1,048,575 observations, meaning it has 1,048,575 rows and 19 columns.
+
+Additionally, it includes logical data for "ehai_fee," although "ehai_fee" has more than a 90% missing value. "total_amount" and "trip_type" have fewer missing values, and we will address these missing values in question 7.
+
+
+### Q3.
+```{r}
+#Convert character to date.time type
+tripdata_df <- tripdata_df %>%
+  mutate(
+    across(
+      c(lpep_pickup_datetime, lpep_dropoff_datetime),
+      ~ as.POSIXct(., format = "%m/%d/%Y %H:%M")
+    )
+  )
+
+summary(tripdata_df)
+```
+a)  Most variables are numerical, but date-related variables, such as "lpep_pickup_datetime" and "lpep_dropoff_datetime",  are character type. We convert these character data types to datetime type. 
+
+b) Since the dataset contains numerical variables related to taxes, tips, charges, etc., the numbers should be positive or zero. However, some variables have minimum values that are negative, which should be unreasonable. These variables include "fare_amount," "extra," "mta_tax," "tip_amount," "improvement_surcharge," and "total_amount."
+
+c) This is 2018 dataset. But datetime variables has information that was not in 2018, it's inconsistent data. 
+
+d) payment_type are ordinal values, so we can consider converting their data type as character type.
+
+
+### Q4.
+```{r}
+# Convert trip_distance to numeric if needed
+tripdata_df$trip_distance <- as.numeric(tripdata_df$trip_distance)
+
+# Create histogram plot
+ggplot(tripdata_df, aes(trip_distance)) +
+  geom_histogram() +
+  scale_y_log10()
+
+
+```
+
+The histogram displays a right-skewed distribution, with most of the "trip_distance" values being less than 3~5 km (left side). However, it is important to note that having many "0" values for "trip_distance" is not reasonable. The "0" values in the trip_distance data may be invalid.
+
+
+### Q5 remove outlier
+```{r}
+# Calculate mean and standard deviation of tip_amount and trip_distance
+mean_tip_amount <- mean(tripdata_df$tip_amount)
+sd_tip_amount  <- sd(tripdata_df$tip_amount)
+
+mean_trip_distance <- mean(tripdata_df$trip_distance)
+sd_trip_distance  <- sd(tripdata_df$trip_distance)
+
+
+# Identify outliers of tip_amount
+outliers_tip_amount <- tripdata_df$tip_amount > (mean_tip_amount + 3*sd_tip_amount) | tripdata_df$tip_amount < (mean_tip_amount - 3 * sd_tip_amount)
+sum(tripdata_df$tip_amount > (mean_tip_amount + 3*sd_tip_amount))
+sum(tripdata_df$tip_amount < (mean_tip_amount - 3 * sd_tip_amount))
+
+# total number of outliers in tip_amount
+total_tip_outliers <- sum(tripdata_df$tip_amount > (mean_tip_amount + 3*sd_tip_amount)) +
+sum(tripdata_df$tip_amount < (mean_tip_amount - 3 * sd_tip_amount))
+cat("The number of outlier in tip_amount is" ,total_tip_outliers)
+
+
+# Identify outliers of trip_distance
+outliers_trip_distance <- tripdata_df$trip_distance > (mean_trip_distance + 3*sd_trip_distance) | tripdata_df$trip_distance < (mean_trip_distance - 3 * sd_trip_distance)
+sum(tripdata_df$trip_distance > (mean_trip_distance + 3*sd_trip_distance))
+sum(tripdata_df$trip_distance < (mean_trip_distance - 3 * sd_trip_distance))
+
+# total number of outliers in tip_amount
+total_tripDist_outliers <- sum(tripdata_df$trip_distance > (mean_trip_distance + 3*sd_trip_distance)) +
+sum(tripdata_df$trip_distance < (mean_trip_distance - 3 * sd_trip_distance))
+cat("The number of outlier in trip_distance is" ,total_tripDist_outliers)
+
+
+# Remove outlier of tip_amount in the dataset
+tip_amount_clean <- tripdata_df[!outliers_tip_amount, ]
+head(tip_amount_clean, 3)
+dim(tip_amount_clean)
+```
+
+The number of outlier "tip_amount" is 14444, and the number of outlier "trip_distance" variable is 20953. 
+
+After removing the outlier tip_amount from the data, the dataset dimension becomes 1034131 x 19.
+
+
+### Q6
+```{r}
+# Remove outlier trip_distance in the dataset
+trip_distance_clean <- tripdata_df[!outliers_trip_distance, ]
+
+
+# Create a factor variable for payment_type with corresponding labels
+trip_distance_clean$payment_type_label <- factor(trip_distance_clean$payment_type,
+  levels = c(1, 2, 3, 4, 5, 6),
+  labels = c("Credit card", "Cash", "No charge", "Dispute", "Unknown", "Voided trip")
+)
+
+
+# Draw boxplot
+ggplot(trip_distance_clean, aes(x = payment_type_label, y = trip_distance)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Trip Distance by Payment Type",
+    x = "Payment Type",
+    y = "Trip Distance"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))  
+
+
+```
+
+
+
+### Q7 two methods to handle missing data
+If there are any missing values in the dataset, we can choose to remove them, impute them, or encode them to handle the missing data. If the variable has more than 10% missing values, I will consider removing it. If the variable is missing approximately 5% to 10% of its values, I will consider imputing the missing data with the average value.
+
+```{r}
+# Check any NA values in the dataset
+sapply(tripdata_df, function(x) sum(is.na(x)))
+```
+
+
+There are 3 variables, "total_amount", "ehail_fee", and "trip_type", have missing values. "total_amount" and "trip_type" have less than 5% missing values. We can impute it with mean, median value or zero. Most values in "ehail_fee" variables are missing, so we can remove it. 
+
+```{r}
+# impute mean value in "total_amount" column
+tripdata_df <- tripdata_df %>% 
+  replace_na(list(total_amount = mean(.$total_amount, na.rm = TRUE)))
+
+# impute mean value in "trip_type" column
+tripdata_df <- tripdata_df %>% 
+  replace_na(list(trip_type = median(.$trip_type, na.rm = TRUE)))
+
+
+# As 90% missing value in "ehail_fee", it's hard to impute and encode values in this column. So we ignore it in case we need machine learning to train our model.
+tripdata_df <- tripdata_df %>% 
+  select(-ehail_fee)
+
+
+# Check the dataset again
+summary(tripdata_df)
+dim(tripdata_df)
+```
+
+We imputed missing values in the 'total_amount' and 'trip_type' variables. Additionally, we removed '-ehail_fee,' which had 90% missing values. In summary, there are no remaining missing values, and the dataset now consists of 18 variables.

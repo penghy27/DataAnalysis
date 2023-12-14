@@ -1,0 +1,311 @@
+---
+title: "DA5020.A10.Hsiao-Yu.Peng"
+author: "Hsiao-Yu Peng"
+date: "2023-11-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(Stat2Data)
+library(openintro)
+library(corrplot)
+library(car) # For VIF function
+library(psych)
+```
+
+
+# Q1-1.In your own words, provide a clear definition of the confidence interval and the prediction interval, and state their respective significance.
+
+1. *Confidence Interval (CI):*
+- Definition: A confidence interval is a statistical range that is calculated from sample data and is used to estimate the range within which a population parameter, such as the mean or proportion, is likely to fall. It provides a level of confidence, typically expressed as a percentage (e.g., 95% confidence interval), that the true parameter value is within the calculated interval.
+- Significance: The confidence interval gives us a sense of the precision of our estimate. For example, a 95% confidence interval means that if we were to take many samples and construct confidence intervals from each, we would expect about 95% of those intervals to contain the true parameter.
+
+2. *Prediction Interval (PI):*
+- Definition: A prediction interval is also a statistical range, but it is used to estimate the range within which a future observation or data point is likely to fall. Unlike a confidence interval, which focuses on estimating a population parameter, a prediction interval takes into account both the variability of the data and the uncertainty associated with predicting an individual outcome.
+- Significance: The prediction interval is broader than the confidence interval because it considers not only the variability in estimating the population parameter but also the variability of individual observations. It accounts for both the variability within the sample data and the uncertainty associated with predicting an individual value.
+
+
+# Q1-2. Describe in your own words what a multiple linear regression is and why one would be used.
+
+Multiple linear regression analyzes the relationship between multiple independent variables and a single dependent variable. In simpler terms, it helps us understand how several factors influence or contribute to the variation in an outcome.  
+
+Multiple linear regression is employed when the relationship between the dependent variable and multiple independent variables is more intricate than what can be captured by a simple linear model. By considering multiple factors simultaneously, the model aims to improve the accuracy of predictions compared to models with fewer variables.
+
+It helps identify which independent variables are statistically significant predictors of the dependent variable, aiding in understanding the relative importance of each factor.
+
+
+# Q1-3. Install the openintro R package and load the library in your R environment. Use the ncbirths dataset to answer the following questions
+
+```{r}
+## install.packages("openintro") 
+# "ncbirths" not found, use `install.packages("Stat2Data")` instead.
+
+df <- ncbirths
+
+summary(df)
+glimpse(df)
+```
+
+The data set has dimension 1000 x 13, containing both numeric and factor data types. We will preprocess factor variables using either label encoding or one-hot encoding. 
+
+### Find out what variables has NA values
+```{r}
+# Check for missing values in each variable
+colSums(is.na(df))
+```
+
+Because the data set has some NA values, we will perform data imputation.
+
+#### Numeric Variables Preprocessing
+
+```{r}
+# Impute values in fage, weeks, visits, gained
+df <- df %>%
+  mutate(fage = ifelse(is.na(fage), mean(fage, na.rm = TRUE), fage)) %>% 
+  mutate(weeks = ifelse(is.na(weeks), median(weeks, na.rm = TRUE), weeks)) %>% 
+  mutate(visits = ifelse(is.na(visits), median(visits, na.rm = TRUE), visits)) %>% 
+  mutate(gained = ifelse(is.na(gained), median(gained, na.rm = TRUE), gained))
+
+```
+
+The remaining variables with NA values are factor variables, which are quite few. Therefore, we can ignore them for the following calculation.
+
+```{r}
+# Remove rows with NA values
+df <- na.omit(df)
+colSums(is.na(df))
+dim(df)
+```
+
+Now we don't have NA values in the data set.
+
+
+#### Factor Variables PreProcessing
+
+```{r}
+# Select all factor variables from the dataset
+factor_var <- df %>% 
+  select_if(~ !is.numeric(.))
+
+names(factor_var)
+
+```
+
+```{r}
+# Identify unique character values in each factor variable
+unique_values <- lapply(factor_var, levels)
+
+unique_values
+```
+
+From the level results of factor variables, we can see that they have a binary definition. Therefore, we will apply label encoding, assigning 0 and 1 to these factor variables.
+
+
+```{r}
+# Label Encoding
+transformed_df <- df %>% 
+  mutate(mature = if_else(mature == unique_values$mature[1], 1, 0)) %>% 
+  mutate(premie = if_else(premie == unique_values$premie[2], 1, 0)) %>% 
+  mutate(marital = if_else(marital == unique_values$marital[2], 1, 0)) %>% 
+  mutate(lowbirthweight = if_else(lowbirthweight == unique_values$lowbirthweight[1], 1, 0)) %>% 
+  mutate(gender = if_else(gender == unique_values$gender[1], 1, 0)) %>% 
+  mutate(habit = if_else(habit == unique_values$habit[2], 1, 0)) %>% 
+  mutate(whitemom = if_else(whitemom == unique_values$whitemom[2], 1, 0))
+  
+head(transformed_df)
+```
+
+
+# Q2. Load the data in your R environment and build a full correlation matrix ,i.e. a matrix that shows the correlations between all variables. Do you detect any multicollinearity that would affect the construction of a multiple regression model? Comment on the distribution of each field. Do you anticipate that there are fields that may not be useful for the model? If yes, provide an example.
+
+```{r}
+# Calculate correlation matrix 
+cor_matrix <- cor(transformed_df, use = "pairwise.complete.obs") # ignore NA values
+
+print(cor_matrix)
+
+# Display the correlation matrix plot
+corrplot(cor_matrix, method = "color", addCoef.col = "black", number.cex = 0.5)
+
+# Display the correlation coefficienct, scatter plot, and variables histograms
+pairs.panels(transformed_df)
+
+```
+
+**Multicollinearity** happens when independent variables in the regression model are highly correlated to each other. We observed that "fage" appears to be related to "mage" (r = 0.71), "premie" and  "weeks" show a correlation (r = -0.74). Finally, "lowbirthweight" and "weight" seem to be related (r = -0.72). The high correlation among some of the predictors suggests that data-based multicollinearity exists.
+
+The variables—fage, mage, visits, gained, and weight—exhibit somewhat normal distributions, while weeks displays a left-skewed distribution. On the other hand, other variables—mature, premie, marital, lowbirthweight, gender, habit, and whitemom—have been transformed into binary definitions. The "Mature" variable indicates that younger moms outnumber mature moms, the "Premie" variable suggests that full-term cases are more common than preterm, "Marital" indicates a slightly higher frequency of married compared to unmarried, "Lowbirthweight" suggests that the number of infants with normal birth weight is higher than those with low birth weight, gender distribution is nearly equal, and the smoking habit variable shows that non-smokers outnumber smokers.
+
+As we will build a model to predict weight later, we assess correlation coefficients related to weight. We find that "fage," "mage," "mature," "visits," and "habit" have lower coefficients (r < 0.1) in relation to weight. These variables may not be particularly useful for the model. However, we will confirm this by constructing an initial regression model with all variables and then use backward elimination to evaluate the useful variables.
+
+
+
+# Q3. Build a full multiple regression model that predicts the birth weight i.e weight. Comment on the: R-squared, Standard Error, F-Statistic, p-values of coefficients.
+
+```{r}
+# Fit a linear model, assuming 'weight' is the response variable
+model <- lm(weight ~ ., data = transformed_df)
+
+# Print a summary of the regression model
+summary(model)
+
+```
+
+1. **R-squared**:
+The R-squared value is 0.6413, which means that approximately 64.13% of the variance in the birth weight can be explained by the predictor variables in the model. This indicates a moderately good fit.
+2. **Adjusted R-squared**:
+The Adjusted R-squared value is 0.6369. This adjusts the R-squared value for the number of predictors in the model, providing a more accurate measure of model fit, especially when adding more predictors.
+3. **Residual Standard Error**:
+The residual standard error (0.9068) represents the standard deviation of the residuals. It gives an estimate of the average amount by which the actual birth weight values deviate from the predicted values.
+4. **F-Statistic**:
+The F-statistic (146.4) tests the overall significance of the regression model. In this case, the large F-statistic with a very low p-value (< 2.2e-16) suggests that the model as a whole is statistically significant.
+5. **p-values of Coefficients**:
+- Variables with low p-values < 0.05 (e.g., 'weeks,' 'gained,' 'lowbirthweight,' 'gender,' 'habit,' and 'whitemom') are likely to be significant predictors of birth weight.
+- 'mature,' 'premie,' 'visits,' 'marital,' 'fage,' and 'mage' have higher p-values > 0.05 and are not considered statistically significant predictors.
+
+
+
+# Q4. Build a multiple regression model in which all coefficients are significant — use stepwise elimination based on coefficients with the p-value > 0.05. Show each step as you eliminate the coefficients and clearly state the reason for their elimination. At each step, determine if the model is improving.
+
+Arrange the coefficients with p value > 0.05 from high to low.
+
+```{r}
+# Extract p-values and variable names
+sm <- summary(model)
+p_values <- sm$coefficients[, "Pr(>|t|)"]
+variable_names <- rownames(sm$coefficients)
+
+# Create a data frame with variable names and p-values
+result_df <- data.frame(variable = variable_names, p_value = p_values)
+
+# Order the data frame by p-values in descending order
+result_df <- result_df[order(result_df$p_value, decreasing = TRUE), ]
+
+# Print the ordered result
+print(result_df)
+
+```
+
+p value > 0.05 in a descending order: 'premie,' 'mature,' 'visits' 'mage,'  'fage,' and 'marital' 
+
+```{r}
+# Stepwise elimination
+stepwise_model <- model
+
+# remove "premie" variable
+transformed_df2 <- subset(transformed_df, select = -c(premie))
+
+stepwise_model <- lm(weight ~., data = transformed_df2)
+cat("Removed: 'premie'", "\n")
+summary(stepwise_model)
+
+```
+
+We eliminated the "premie" variable, and the R-squared and standard error did not change significantly after fitting the model.
+
+
+```{r}
+# remove "mature" variable
+transformed_df2 <- subset(transformed_df2, select = -c(mature))
+
+stepwise_model <- lm(weight ~., data = transformed_df2)
+cat("Removed: 'mature'", "\n")
+summary(stepwise_model)
+
+```
+
+Next, we eliminated the "mature" variable, and the standard error and R-squared did not change significantly after fitting the model. 
+
+
+```{r}
+# remove "visits" variable
+transformed_df2 <- subset(transformed_df2, select = -c(visits))
+
+stepwise_model <- lm(weight ~., data = transformed_df2)
+cat("Removed: 'visits'", "\n")
+summary(stepwise_model)
+
+```
+
+We eliminated the "visits" variable, and the standard error and R-squared did not change significantly after fitting the model. 
+
+```{r}
+# remove "mage" variable
+transformed_df2 <- subset(transformed_df2, select = -c(mage))
+
+stepwise_model <- lm(weight ~., data = transformed_df2)
+cat("Removed: 'mage'", "\n")
+summary(stepwise_model)
+
+
+```
+
+We excluded the "mage" variable, and the standard error and R-squared showed no significant changes after fitting the model. However, it's worth noting that the p-value for "fage" has now dropped below 0.05.
+
+
+```{r}
+# remove "marital" variable
+transformed_df2 <- subset(transformed_df2, select = -c(marital))
+
+stepwise_model <- lm(weight ~., data = transformed_df2)
+cat("Removed: 'marital'", "\n")
+summary(stepwise_model)
+
+```
+
+We eliminated the "marital" variable, and the standard error and R-squared did not change significantly after fitting the model. 
+
+```{r}
+summary(stepwise_model)
+
+```
+
+Now, the final model reveals that the coefficients with a significant p-value < 0.05 in the multiple regression model are for the variables: "fage", "weeks," "gained," "lowbirthweight," "gender," "habit," and "whitemom.
+
+We can present the model as the following formula:
+
+weight = -0.54 + 0.01 * fage + 0.19 * weeks + 0.006 * gained - 2.30 * lowbirthweight - 0.35 * gender - 0.28 * habit + 0.27 * whitemom
+
+
+
+# Q5. Use the following data to predict the birth weight using the final model from question 4 above: fage = 40, mage = 32, mature = 'mature mom’, weeks = 42, premie = 'full term’, visits = 12, marital = ‘married', gained=22, lowbirthweight = 'not low’, gender = ‘female', habit = ‘nonsmoker', whitemom = ‘white’. After which, derive the 95% confidence and prediction intervals for the forecasted birth weight. Comment on the results.
+
+```{r}
+# Create a data frame for prediction
+new_data <- data.frame(
+  fage = 40,
+  mage = 32,
+  mature = 1,
+  weeks = 42,
+  premie = 0,
+  visits = 12,
+  marital = 1,  #marital = ‘married'
+  gained = 22,
+  lowbirthweight = 0, #lowbirthweight = 'not low’
+  gender = 1,  #gender = ‘female'
+  habit = 0, #habit = ‘nonsmoker'
+  whitemom = 1 # whitemom = ‘white’
+)
+
+# Predict birth weight
+predicted_weight <- predict(stepwise_model, newdata = new_data)
+
+confidence_interval <- predict(stepwise_model, newdata = new_data, interval = "confidence")
+
+prediction_interval <- predict(stepwise_model, newdata = new_data, interval = "predict")
+
+# Display the results
+cat("Predicted weight:", predicted_weight, "\n")
+cat("95% Confidence Interval:", confidence_interval[2], "to", confidence_interval[3], "\n")
+cat("95% Prediction Interval:", prediction_interval[2], "to", prediction_interval[3], "\n")
+
+
+```
+
+The model predicts a birth weight of approximately 8.065 with a 95% confidence interval between 7.915 and 8.215. The prediction interval indicates that 95% of the birth weight will be within the range of 6.281 to 9.849. The narrower confidence interval reflects the precision of the model in estimating the mean birth weight, while the wider prediction interval acknowledges the additional variability in individual predictions. The difference between the two intervals emphasizes the uncertainty associated with predicting individual birth weights compared to estimating the mean.
+
