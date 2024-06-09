@@ -6,10 +6,10 @@ The repo contains three practicums for the 'Collect, Store, Retrieve, Analyze Da
 
 - **Practicum III: NYC Taxis tips incentive (R, CRISP-DM, Exploratory Data Analysis, Data Preparation, Machine Learing)**
 - **Practicum II: Hospital Nursing Intervention Pilot Program (SQL, R, Data Analysis)**
-- **Practicum I: Data loading, parsing, shaping, and exploration (R)
+- **Practicum I: Data loading, parsing, shaping, and exploration (R)**
 
 
-### Course Module
+Course Module
 
 - Loading Files & Building the BAT
 - Shaping & Transforming Data
